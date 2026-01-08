@@ -66,6 +66,25 @@ jobs:
       run: |
         echo "=== Deploying Database Server ==="
         
+        # 先确保 Docker Compose 已安装
+        ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ secrets.DB_INSTANCE_IP }} << 'EOF'
+          # 检查并安装 Docker Compose
+          if ! command -v docker-compose &> /dev/null && [ ! -f /usr/local/bin/docker-compose ]; then
+            echo "安装 Docker Compose..."
+            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+            echo "✅ Docker Compose 安装完成"
+          else
+            echo "✅ Docker Compose 已安装"
+          fi
+          
+          # 验证
+          COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
+          $COMPOSE_CMD version || sudo $COMPOSE_CMD version || echo "警告: 无法验证 Docker Compose 版本"
+        EOF
+        
         # Upload database configuration
         scp -i ~/.ssh/lightsail-keypair.pem \
           -o StrictHostKeyChecking=no \
@@ -73,7 +92,7 @@ jobs:
           database/init.sql \
           ${{ env.SSH_USER }}@${{ secrets.DB_INSTANCE_IP }}:/home/ec2-user/
         
-        # Create .env file for database server
+        # Create .env file and start services
         ssh -i ~/.ssh/lightsail-keypair.pem \
           -o StrictHostKeyChecking=no \
           ${{ env.SSH_USER }}@${{ secrets.DB_INSTANCE_IP }} << EOF
@@ -85,9 +104,12 @@ jobs:
         REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
         EOL
           cd /home/ec2-user
-          sudo docker-compose -f docker-compose.db.yml --env-file .env up -d
+          
+          # 使用完整路径确保命令可用
+          COMPOSE_CMD=\$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
+          sudo \$COMPOSE_CMD -f docker-compose.db.yml --env-file .env up -d
           sleep 15
-          sudo docker-compose -f docker-compose.db.yml ps
+          sudo \$COMPOSE_CMD -f docker-compose.db.yml ps
         EOF
         
         echo "✅ Database server deployed"
@@ -95,6 +117,25 @@ jobs:
     - name: Deploy application server
       run: |
         echo "=== Deploying Application Server ==="
+        
+        # 先确保 Docker Compose 已安装
+        ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << 'EOF'
+          # 检查并安装 Docker Compose
+          if ! command -v docker-compose &> /dev/null && [ ! -f /usr/local/bin/docker-compose ]; then
+            echo "安装 Docker Compose..."
+            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+            echo "✅ Docker Compose 安装完成"
+          else
+            echo "✅ Docker Compose 已安装"
+          fi
+          
+          # 验证
+          COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
+          $COMPOSE_CMD version || sudo $COMPOSE_CMD version || echo "警告: 无法验证 Docker Compose 版本"
+        EOF
         
         # Upload application configuration
         scp -i ~/.ssh/lightsail-keypair.pem \
@@ -114,7 +155,7 @@ jobs:
           -r frontend/build/* \
           ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }}:/home/ec2-user/frontend-build/
         
-        # Create .env file for application server
+        # Create .env file and start services
         ssh -i ~/.ssh/lightsail-keypair.pem \
           -o StrictHostKeyChecking=no \
           ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << EOF
@@ -129,9 +170,12 @@ jobs:
         REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
         EOL
           cd /home/ec2-user
-          sudo docker-compose -f docker-compose.app.yml --env-file .env up -d --build
+          
+          # 使用完整路径确保命令可用
+          COMPOSE_CMD=\$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
+          sudo \$COMPOSE_CMD -f docker-compose.app.yml --env-file .env up -d --build
           sleep 20
-          sudo docker-compose -f docker-compose.app.yml ps
+          sudo \$COMPOSE_CMD -f docker-compose.app.yml ps
         EOF
         
         echo "✅ Application server deployed"
