@@ -62,9 +62,29 @@ if ! aws lightsail get-instance --instance-name "$DB_INSTANCE_NAME" --region "$R
         --region "$REGION"
     
     echo "⏳ 等待数据库服务器启动..."
-    aws lightsail wait instance-running \
-        --instance-name "$DB_INSTANCE_NAME" \
-        --region "$REGION"
+    # AWS Lightsail 不支持 wait 命令，使用轮询方式
+    MAX_WAIT=300  # 最多等待 5 分钟
+    WAIT_TIME=0
+    while [ $WAIT_TIME -lt $MAX_WAIT ]; do
+        STATE=$(aws lightsail get-instance \
+            --instance-name "$DB_INSTANCE_NAME" \
+            --region "$REGION" \
+            --query 'instance.state.name' \
+            --output text 2>/dev/null || echo "pending")
+        
+        if [ "$STATE" = "running" ]; then
+            echo "✅ 数据库服务器已启动"
+            break
+        fi
+        
+        echo "  状态: $STATE, 等待中... ($WAIT_TIME/$MAX_WAIT 秒)"
+        sleep 10
+        WAIT_TIME=$((WAIT_TIME + 10))
+    done
+    
+    if [ "$STATE" != "running" ]; then
+        echo "⚠️  警告: 数据库服务器启动超时，但继续部署..."
+    fi
     echo "✅ 数据库服务器已创建"
 else
     echo "✅ 数据库服务器已存在"
@@ -92,9 +112,29 @@ if ! aws lightsail get-instance --instance-name "$APP_INSTANCE_NAME" --region "$
         --region "$REGION"
     
     echo "⏳ 等待应用服务器启动..."
-    aws lightsail wait instance-running \
-        --instance-name "$APP_INSTANCE_NAME" \
-        --region "$REGION"
+    # AWS Lightsail 不支持 wait 命令，使用轮询方式
+    MAX_WAIT=300  # 最多等待 5 分钟
+    WAIT_TIME=0
+    while [ $WAIT_TIME -lt $MAX_WAIT ]; do
+        STATE=$(aws lightsail get-instance \
+            --instance-name "$APP_INSTANCE_NAME" \
+            --region "$REGION" \
+            --query 'instance.state.name' \
+            --output text 2>/dev/null || echo "pending")
+        
+        if [ "$STATE" = "running" ]; then
+            echo "✅ 应用服务器已启动"
+            break
+        fi
+        
+        echo "  状态: $STATE, 等待中... ($WAIT_TIME/$MAX_WAIT 秒)"
+        sleep 10
+        WAIT_TIME=$((WAIT_TIME + 10))
+    done
+    
+    if [ "$STATE" != "running" ]; then
+        echo "⚠️  警告: 应用服务器启动超时，但继续部署..."
+    fi
     echo "✅ 应用服务器已创建"
 else
     echo "✅ 应用服务器已存在"
@@ -107,6 +147,36 @@ APP_IP=$(aws lightsail get-instance \
     --output text)
 
 echo "应用服务器 IP: $APP_IP"
+echo ""
+
+# 重新获取 IP（确保已分配）
+echo "确认实例 IP 地址..."
+sleep 10
+DB_IP=$(aws lightsail get-instance \
+    --instance-name "$DB_INSTANCE_NAME" \
+    --region "$REGION" \
+    --query 'instance.publicIpAddress' \
+    --output text)
+
+APP_IP=$(aws lightsail get-instance \
+    --instance-name "$APP_INSTANCE_NAME" \
+    --region "$REGION" \
+    --query 'instance.publicIpAddress' \
+    --output text)
+
+if [ -z "$DB_IP" ] || [ "$DB_IP" = "None" ]; then
+    echo "❌ 错误: 无法获取数据库服务器 IP"
+    exit 1
+fi
+
+if [ -z "$APP_IP" ] || [ "$APP_IP" = "None" ]; then
+    echo "❌ 错误: 无法获取应用服务器 IP"
+    exit 1
+fi
+
+echo "✅ 实例 IP 确认:"
+echo "   数据库服务器: $DB_IP"
+echo "   应用服务器: $APP_IP"
 echo ""
 
 # 步骤 4: 配置防火墙
@@ -141,8 +211,37 @@ echo ""
 
 # 步骤 5: 等待 SSH 可用
 echo "=== 步骤 5: 等待 SSH 可用 ==="
-echo "等待 60 秒让实例完全就绪..."
-sleep 60
+echo "等待实例完全就绪（SSH 服务启动）..."
+
+# 等待 SSH 可用（最多 2 分钟）
+MAX_SSH_WAIT=120
+SSH_WAIT_TIME=0
+SSH_READY=false
+
+while [ $SSH_WAIT_TIME -lt $MAX_SSH_WAIT ]; do
+    # 测试 SSH 连接（数据库服务器）
+    if ssh -i "${KEY_PAIR_NAME}.pem" \
+        -o StrictHostKeyChecking=no \
+        -o ConnectTimeout=5 \
+        -o BatchMode=yes \
+        "$SSH_USER@$DB_IP" \
+        "echo 'SSH ready'" &> /dev/null; then
+        echo "✅ 数据库服务器 SSH 已就绪"
+        SSH_READY=true
+        break
+    fi
+    
+    echo "  等待 SSH 就绪... ($SSH_WAIT_TIME/$MAX_SSH_WAIT 秒)"
+    sleep 10
+    SSH_WAIT_TIME=$((SSH_WAIT_TIME + 10))
+done
+
+if [ "$SSH_READY" = false ]; then
+    echo "⚠️  警告: SSH 连接超时，但继续尝试部署..."
+fi
+
+echo "等待 30 秒让实例完全就绪..."
+sleep 30
 echo ""
 
 # 步骤 6: 部署数据库服务器
