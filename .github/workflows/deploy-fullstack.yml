@@ -28,8 +28,26 @@ jobs:
         mkdir -p ~/.ssh
         echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/lightsail-keypair.pem
         chmod 600 ~/.ssh/lightsail-keypair.pem
-        ssh-keyscan -H ${{ secrets.APP_INSTANCE_IP }} >> ~/.ssh/known_hosts
-        ssh-keyscan -H ${{ secrets.DB_INSTANCE_IP }} >> ~/.ssh/known_hosts
+        
+        # 验证必需的 secrets 是否已配置
+        if [ -z "${{ secrets.APP_INSTANCE_IP }}" ]; then
+          echo "❌ 错误: APP_INSTANCE_IP secret 未配置"
+          exit 1
+        fi
+        
+        if [ -z "${{ secrets.DB_INSTANCE_IP }}" ]; then
+          echo "❌ 错误: DB_INSTANCE_IP secret 未配置"
+          exit 1
+        fi
+        
+        # 添加主机到 known_hosts（可选，因为使用了 StrictHostKeyChecking=no）
+        if [ -n "${{ secrets.APP_INSTANCE_IP }}" ]; then
+          ssh-keyscan -H ${{ secrets.APP_INSTANCE_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
+        fi
+        
+        if [ -n "${{ secrets.DB_INSTANCE_IP }}" ]; then
+          ssh-keyscan -H ${{ secrets.DB_INSTANCE_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
+        fi
     
     - name: Build backend WAR
       run: |

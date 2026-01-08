@@ -72,13 +72,24 @@ openssl rand -base64 32
 #### 部署 Secrets
 
 **Name**: `LIGHTSAIL_SSH_KEY`  
-**Value**: 完整的 SSH 私钥内容（从 `deploy/lightsail-keypair.pem` 文件复制）
+**Value**: 完整的 SSH 私钥内容（从 `deploy/lightsail-keypair.pem` 文件复制）  
+**⚠️ 重要**: 复制整个文件内容，包括 `-----BEGIN RSA PRIVATE KEY-----` 和 `-----END RSA PRIVATE KEY-----`
 
 **Name**: `APP_INSTANCE_IP`  
-**Value**: 应用服务器 IP 地址（例如：`54.123.45.67`）
+**Value**: 应用服务器 IP 地址（例如：`54.123.45.67`）  
+**如何获取**: 
+```bash
+aws lightsail get-instance --instance-name fullstack-app --region us-east-1 --query 'instance.publicIpAddress' --output text
+```
 
 **Name**: `DB_INSTANCE_IP`  
-**Value**: 数据库服务器 IP 地址（例如：`54.123.45.68`）
+**Value**: 数据库服务器 IP 地址（例如：`54.123.45.68`）  
+**如何获取**: 
+```bash
+aws lightsail get-instance --instance-name fullstack-db --region us-east-1 --query 'instance.publicIpAddress' --output text
+```
+
+**⚠️ 重要**: 这两个 IP 地址是必需的，如果未配置会导致部署失败！
 
 ## 在 GitHub Actions 中使用
 
