@@ -1,0 +1,130 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+env:
+  INSTANCE_NAME: test-instance
+  INSTANCE_IP: 98.82.17.156
+  REGION: us-east-1
+  SSH_USER: ec2-user
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      run: |
+        docker build -t hello-world-nginx:latest .
+    
+    - name: Run container and test
+      run: |
+        docker run -d -p 8080:80 --name test-container hello-world-nginx:latest
+        sleep 3
+        
+        RESPONSE=$(curl -s http://localhost:8080)
+        if echo "$RESPONSE" | grep -q "hello, world"; then
+          echo "✅ Test passed: Output contains 'hello, world'"
+        else
+          echo "❌ Test failed"
+          exit 1
+        fi
+        
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080)
+        if [ "$STATUS" -eq 200 ]; then
+          echo "✅ HTTP status code: $STATUS"
+        else
+          echo "❌ HTTP status code: $STATUS (expected 200)"
+          exit 1
+        fi
+        
+        docker stop test-container
+        docker rm test-container
+    
+    - name: Image size check
+      run: |
+        IMAGE_SIZE=$(docker images hello-world-nginx:latest --format "{{.Size}}")
+        echo "📦 Docker image size: $IMAGE_SIZE"
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/lightsail-keypair.pem
+        chmod 600 ~/.ssh/lightsail-keypair.pem
+        ssh-keyscan -H ${{ env.INSTANCE_IP }} >> ~/.ssh/known_hosts
+    
+    - name: Deploy to Lightsail
+      run: |
+        echo "=== Deploying to Lightsail ==="
+        
+        # Create app directory
+        ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ env.INSTANCE_IP }} \
+          "mkdir -p /home/ec2-user/app"
+        
+        # Copy application files
+        scp -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          index.html \
+          ${{ env.SSH_USER }}@${{ env.INSTANCE_IP }}:/home/ec2-user/app/
+        
+        # Stop and remove old container
+        ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ env.INSTANCE_IP }} \
+          "sudo docker stop hello-world 2>/dev/null || true; \
+           sudo docker rm hello-world 2>/dev/null || true"
+        
+        # Deploy new container
+        ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ env.INSTANCE_IP }} \
+          "sudo docker run -d -p 80:80 --name hello-world --restart unless-stopped \
+           -v /home/ec2-user/app:/usr/share/nginx/html:ro \
+           nginx:alpine"
+        
+        echo "✅ Deployment completed"
+    
+    - name: Verify deployment
+      run: |
+        echo "=== Verifying deployment ==="
+        sleep 5
+        
+        # Check container status
+        CONTAINER_STATUS=$(ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ env.INSTANCE_IP }} \
+          "sudo docker ps --filter name=hello-world --format '{{.Status}}'")
+        
+        echo "Container status: $CONTAINER_STATUS"
+        
+        # Test HTTP response
+        HTTP_RESPONSE=$(curl -s http://${{ env.INSTANCE_IP }})
+        if echo "$HTTP_RESPONSE" | grep -q "hello, world"; then
+          echo "✅ Deployment verified: Application is accessible at http://${{ env.INSTANCE_IP }}"
+        else
+          echo "⚠️ Warning: Application verification failed"
+          exit 1
+        fi
+

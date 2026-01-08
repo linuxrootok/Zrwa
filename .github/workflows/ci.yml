@@ -1,0 +1,63 @@
+name: CI - Build and Test
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build Docker image
+      run: |
+        docker build -t hello-world-nginx:latest .
+    
+    - name: Run container and test
+      run: |
+        # 启动容器
+        docker run -d -p 8080:80 --name test-container hello-world-nginx:latest
+        
+        # 等待服务启动
+        sleep 3
+        
+        # 测试 HTTP 响应
+        echo "=== 测试 HTTP 响应 ==="
+        RESPONSE=$(curl -s http://localhost:8080)
+        echo "$RESPONSE"
+        
+        # 验证输出包含 "hello, world"
+        if echo "$RESPONSE" | grep -q "hello, world"; then
+          echo "✅ 测试通过：输出包含 'hello, world'"
+        else
+          echo "❌ 测试失败：输出不包含 'hello, world'"
+          exit 1
+        fi
+        
+        # 验证 HTTP 状态码
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080)
+        if [ "$STATUS" -eq 200 ]; then
+          echo "✅ HTTP 状态码: $STATUS"
+        else
+          echo "❌ HTTP 状态码: $STATUS (期望 200)"
+          exit 1
+        fi
+        
+        # 清理
+        docker stop test-container
+        docker rm test-container
+    
+    - name: Image size check
+      run: |
+        IMAGE_SIZE=$(docker images hello-world-nginx:latest --format "{{.Size}}")
+        echo "📦 Docker 镜像大小: $IMAGE_SIZE"
+        echo "✅ 镜像构建成功"
+

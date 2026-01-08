@@ -1,0 +1,103 @@
+name: CD - Deploy to Lightsail
+
+on:
+  push:
+    branches: [ main, master ]
+    paths-ignore:
+      - '*.md'
+      - 'README.md'
+      - '.gitignore'
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  INSTANCE_NAME: test-instance
+  INSTANCE_IP: 98.82.17.156
+  REGION: us-east-1
+  SSH_USER: ec2-user
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/lightsail-keypair.pem
+        chmod 600 ~/.ssh/lightsail-keypair.pem
+        ssh-keyscan -H ${{ env.INSTANCE_IP }} >> ~/.ssh/known_hosts
+    
+    - name: Create application files
+      run: |
+        mkdir -p deploy/app
+        cp index.html deploy/app/
+        echo "Application files prepared"
+    
+    - name: Deploy to Lightsail
+      run: |
+        echo "=== Deploying to Lightsail ==="
+        
+        # Create app directory on server
+        ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ env.INSTANCE_IP }} \
+          "mkdir -p /home/ec2-user/app"
+        
+        # Copy application files
+        scp -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          deploy/app/index.html \
+          ${{ env.SSH_USER }}@${{ env.INSTANCE_IP }}:/home/ec2-user/app/
+        
+        # Stop and remove old container if exists
+        ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ env.INSTANCE_IP }} \
+          "sudo docker stop hello-world 2>/dev/null || true; \
+           sudo docker rm hello-world 2>/dev/null || true"
+        
+        # Deploy new container
+        ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ env.INSTANCE_IP }} \
+          "sudo docker run -d -p 80:80 --name hello-world --restart unless-stopped \
+           -v /home/ec2-user/app:/usr/share/nginx/html:ro \
+           nginx:alpine"
+        
+        echo "✅ Deployment completed"
+    
+    - name: Verify deployment
+      run: |
+        echo "=== Verifying deployment ==="
+        sleep 5
+        
+        # Check container status
+        CONTAINER_STATUS=$(ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ env.INSTANCE_IP }} \
+          "sudo docker ps --filter name=hello-world --format '{{.Status}}'")
+        
+        echo "Container status: $CONTAINER_STATUS"
+        
+        # Test HTTP response
+        HTTP_RESPONSE=$(curl -s http://${{ env.INSTANCE_IP }})
+        if echo "$HTTP_RESPONSE" | grep -q "hello, world"; then
+          echo "✅ Deployment verified: Application is accessible"
+        else
+          echo "⚠️ Warning: Application verification failed"
+          echo "Response: $HTTP_RESPONSE"
+          exit 1
+        fi
+    
+    - name: Deployment summary
+      run: |
+        echo "=== Deployment Summary ==="
+        echo "Instance: ${{ env.INSTANCE_NAME }}"
+        echo "IP: ${{ env.INSTANCE_IP }}"
+        echo "URL: http://${{ env.INSTANCE_IP }}"
+        echo ""
+        echo "✅ Deployment successful!"
+

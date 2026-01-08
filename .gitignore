@@ -1,0 +1,116 @@
+# SSH Keys and Certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.csr
+*.der
+*_rsa
+*_dsa
+*_ecdsa
+*_ed25519
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+known_hosts
+known_hosts.old
+
+# AWS Credentials and Configuration
+.aws/
+aws-credentials.txt
+*.credentials
+credentials.json
+~/.aws/credentials
+~/.aws/config
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+*.env
+.envrc
+
+# Secrets and Passwords
+secrets/
+secrets.txt
+*.secret
+*.passwd
+passwords.txt
+config/secrets.yml
+
+# Temporary Files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE and Editor Files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+*.iml
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Build Artifacts (optional, if you don't want to track builds)
+*.o
+*.so
+*.dll
+*.exe
+dist/
+build/
+
+# Node modules (if using Node.js tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python (if using Python tools)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Local Configuration
+local_config/
+config/local.yml
+*.local.yml
+
+# Backup Files
+*.bak
+*.backup
+*.old
+
+# Project Specific
+# Keep your actual application files, but ignore sensitive deployment files
+deploy/*.pem
+deploy/*.key
+deploy/*credentials*
