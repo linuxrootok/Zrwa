@@ -1,8 +1,11 @@
 .git
 .gitignore
-README.md
-ROADMAP.md
 *.md
-docker-compose.yml
-.github
-
+README.md
+node_modules
+target
+*.log
+.idea
+.vscode
+*.iml
+.DS_Store

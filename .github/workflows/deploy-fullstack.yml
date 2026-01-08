@@ -1,0 +1,150 @@
+name: CD - Deploy Fullstack App
+
+on:
+  push:
+    branches: [ main, master ]
+    paths-ignore:
+      - '*.md'
+      - 'README*.md'
+      - '.gitignore'
+  workflow_dispatch:
+
+env:
+  APP_INSTANCE_NAME: fullstack-app
+  DB_INSTANCE_NAME: fullstack-db
+  REGION: us-east-1
+  SSH_USER: ec2-user
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/lightsail-keypair.pem
+        chmod 600 ~/.ssh/lightsail-keypair.pem
+        ssh-keyscan -H ${{ secrets.APP_INSTANCE_IP }} >> ~/.ssh/known_hosts
+        ssh-keyscan -H ${{ secrets.DB_INSTANCE_IP }} >> ~/.ssh/known_hosts
+    
+    - name: Build backend WAR
+      run: |
+        cd backend
+        mvn clean package -DskipTests
+        echo "✅ Backend WAR built"
+    
+    - name: Build frontend
+      run: |
+        cd frontend
+        npm install
+        npm run build
+        echo "✅ Frontend built"
+    
+    - name: Deploy database server
+      run: |
+        echo "=== Deploying Database Server ==="
+        
+        # Upload database configuration
+        scp -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          docker-compose.db.yml \
+          database/init.sql \
+          ${{ env.SSH_USER }}@${{ secrets.DB_INSTANCE_IP }}:/home/ec2-user/
+        
+        # Create .env file for database server
+        ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ secrets.DB_INSTANCE_IP }} << EOF
+          cat > /home/ec2-user/.env << EOL
+        MYSQL_ROOT_PASSWORD=${{ secrets.DB_ROOT_PASSWORD }}
+        MYSQL_DATABASE=${{ secrets.DB_NAME }}
+        MYSQL_USER=${{ secrets.DB_USER }}
+        MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }}
+        REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+        EOL
+          cd /home/ec2-user
+          sudo docker-compose -f docker-compose.db.yml --env-file .env up -d
+          sleep 15
+          sudo docker-compose -f docker-compose.db.yml ps
+        EOF
+        
+        echo "✅ Database server deployed"
+    
+    - name: Deploy application server
+      run: |
+        echo "=== Deploying Application Server ==="
+        
+        # Upload application configuration
+        scp -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          docker-compose.app.yml \
+          ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }}:/home/ec2-user/
+        
+        # Upload backend WAR
+        scp -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          backend/target/app.war \
+          ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }}:/home/ec2-user/backend.war
+        
+        # Upload frontend build
+        scp -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          -r frontend/build/* \
+          ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }}:/home/ec2-user/frontend-build/
+        
+        # Create .env file for application server
+        ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << EOF
+          cat > /home/ec2-user/.env << EOL
+        DB_HOST=${{ secrets.DB_INSTANCE_IP }}
+        DB_PORT=3306
+        DB_NAME=${{ secrets.DB_NAME }}
+        DB_USER=${{ secrets.DB_USER }}
+        DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+        REDIS_HOST=${{ secrets.DB_INSTANCE_IP }}
+        REDIS_PORT=6379
+        REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
+        EOL
+          cd /home/ec2-user
+          sudo docker-compose -f docker-compose.app.yml --env-file .env up -d --build
+          sleep 20
+          sudo docker-compose -f docker-compose.app.yml ps
+        EOF
+        
+        echo "✅ Application server deployed"
+    
+    - name: Verify deployment
+      run: |
+        echo "=== Verifying Deployment ==="
+        sleep 10
+        
+        # Test health endpoint
+        HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://${{ secrets.APP_INSTANCE_IP }}/api/health || echo "000")
+        if [ "$HTTP_STATUS" = "200" ]; then
+          echo "✅ Health check passed"
+        else
+          echo "⚠️  Health check failed (HTTP $HTTP_STATUS)"
+          exit 1
+        fi
+        
+        # Test API
+        API_RESPONSE=$(curl -s http://${{ secrets.APP_INSTANCE_IP }}/api/messages)
+        if echo "$API_RESPONSE" | grep -q "messages"; then
+          echo "✅ API test passed"
+        else
+          echo "⚠️  API test failed"
+          exit 1
+        fi
+    
+    - name: Deployment summary
+      run: |
+        echo "=== Deployment Summary ==="
+        echo "Application Server: http://${{ secrets.APP_INSTANCE_IP }}"
+        echo "Database Server: ${{ secrets.DB_INSTANCE_IP }}"
+        echo "✅ Deployment successful!"
+

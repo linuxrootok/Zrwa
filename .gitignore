@@ -31,6 +31,7 @@ credentials.json
 .env.local
 .env.*.local
 *.env
+!*.env.example
 .envrc
 
 # Secrets and Passwords
@@ -114,3 +115,30 @@ config/local.yml
 deploy/*.pem
 deploy/*.key
 deploy/*credentials*
+
+# Java/Maven
+backend/target/
+backend/.classpath
+backend/.project
+backend/.settings/
+*.war
+*.jar
+!backend/target/*.war
+
+# Node.js/React
+frontend/node_modules/
+frontend/build/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# IDE
+*.iml
+.idea/
+.vscode/
+*.swp
+*.swo
