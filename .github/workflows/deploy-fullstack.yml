@@ -133,9 +133,10 @@ jobs:
     - name: Cache frontend dependencies
       if: steps.changes.outputs.frontend_changed == 'true'
       uses: actions/cache@v3
+      id: cache-frontend
       with:
         path: frontend/node_modules
-        key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package.json') }}-${{ hashFiles('frontend/package-lock.json') }}
+        key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package.json') }}
         restore-keys: |
           ${{ runner.os }}-frontend-${{ hashFiles('frontend/package.json') }}-
           ${{ runner.os }}-frontend-
@@ -145,16 +146,34 @@ jobs:
       if: steps.changes.outputs.frontend_changed == 'true'
       run: |
         cd frontend
-        # 检查是否存在 package-lock.json，如果有则使用 npm ci（更快），否则使用 npm install
+        
+        # 显示当前目录内容（用于调试）
+        echo "=== 当前目录内容 ==="
+        ls -la | head -20
+        
+        # 检查 package-lock.json 是否存在
         if [ -f package-lock.json ]; then
-          echo "使用 npm ci（检测到 package-lock.json）..."
-          npm ci --prefer-offline --no-audit
+          echo "✅ 检测到 package-lock.json"
+          echo "尝试使用 npm ci（更快、更可靠）..."
+          # 尝试使用 npm ci，如果失败则回退到 npm install
+          if npm ci --prefer-offline --no-audit; then
+            echo "✅ npm ci 成功"
+          else
+            echo "⚠️  npm ci 失败，错误代码: $?"
+            echo "回退到 npm install..."
+            npm install --prefer-offline --no-audit
+          fi
         else
-          echo "使用 npm install（未检测到 package-lock.json，将生成）..."
+          echo "⚠️  未检测到 package-lock.json"
+          echo "使用 npm install（会自动生成 package-lock.json）..."
           npm install --prefer-offline --no-audit
-          # 确保 package-lock.json 被提交到仓库
-          echo "⚠️  注意: package-lock.json 已生成，请提交到仓库以便后续使用 npm ci"
+          if [ -f package-lock.json ]; then
+            echo "✅ package-lock.json 已生成"
+            echo "⚠️  注意: 请提交 package-lock.json 到仓库以便后续使用 npm ci"
+          fi
         fi
+        
+        echo "=== 开始构建前端 ==="
         npm run build
         echo "✅ Frontend built"
     
