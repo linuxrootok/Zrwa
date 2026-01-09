@@ -149,21 +149,21 @@ jobs:
         ssh -i ~/.ssh/lightsail-keypair.pem \
           -o StrictHostKeyChecking=no \
           ${{ env.SSH_USER }}@${{ secrets.DB_INSTANCE_IP }} << 'DB_DEPLOY_EOF'
-          cd /home/ec2-user
+            cd /home/ec2-user
 
-          # 确保 Docker 正在运行
-          if ! sudo docker ps &> /dev/null; then
-            echo "启动 Docker 服务..."
-            sudo systemctl start docker
-            sleep 3
-          fi
+            # 确保 Docker 正在运行
+            if ! sudo docker ps &> /dev/null; then
+              echo "启动 Docker 服务..."
+              sudo systemctl start docker
+              sleep 3
+            fi
 
-          # 使用完整路径确保命令可用
-          COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
-          sudo $COMPOSE_CMD -f docker-compose.db.yml --env-file .env up -d
-          sleep 15
-          sudo $COMPOSE_CMD -f docker-compose.db.yml ps
-          DB_DEPLOY_EOF
+            # 使用完整路径确保命令可用
+            COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
+            sudo $COMPOSE_CMD -f docker-compose.db.yml --env-file .env up -d
+            sleep 15
+            sudo $COMPOSE_CMD -f docker-compose.db.yml ps
+        DB_DEPLOY_EOF
         
         echo "✅ Database server deployed"
     
@@ -285,60 +285,60 @@ jobs:
         ssh -i ~/.ssh/lightsail-keypair.pem \
           -o StrictHostKeyChecking=no \
           ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << 'DEPLOY_EOF'
-          cd /home/ec2-user
+            cd /home/ec2-user
 
-          # 加载 Docker 镜像（如果存在）
-          if [ -f backend-image.tar.gz ]; then
-            echo "加载 Docker 镜像..."
-            sudo docker load < backend-image.tar.gz
-            echo "✅ Docker 镜像已加载"
-          fi
+            # 加载 Docker 镜像（如果存在）
+            if [ -f backend-image.tar.gz ]; then
+              echo "加载 Docker 镜像..."
+              sudo docker load < backend-image.tar.gz
+              echo "✅ Docker 镜像已加载"
+            fi
 
-          # 确保 Docker 正在运行
-          if ! sudo docker ps &> /dev/null; then
-            echo "启动 Docker 服务..."
-            sudo systemctl start docker
-            sleep 3
-          fi
+            # 确保 Docker 正在运行
+            if ! sudo docker ps &> /dev/null; then
+              echo "启动 Docker 服务..."
+              sudo systemctl start docker
+              sleep 3
+            fi
 
-          # 确保目录存在
-          mkdir -p frontend-build nginx
+            # 确保目录存在
+            mkdir -p frontend-build nginx
 
-          # 使用完整路径确保命令可用
-          COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
+            # 使用完整路径确保命令可用
+            COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
 
-          # 停止旧容器（如果存在）
-          echo "停止旧容器..."
-          sudo $COMPOSE_CMD -f docker-compose.app.yml down 2>/dev/null || true
+            # 停止旧容器（如果存在）
+            echo "停止旧容器..."
+            sudo $COMPOSE_CMD -f docker-compose.app.yml down 2>/dev/null || true
 
-          # 启动服务（不使用 --build，因为镜像已在 GitHub Actions 中构建）
-          echo "启动应用服务..."
-          sudo $COMPOSE_CMD -f docker-compose.app.yml --env-file .env up -d
+            # 启动服务（不使用 --build，因为镜像已在 GitHub Actions 中构建）
+            echo "启动应用服务..."
+            sudo $COMPOSE_CMD -f docker-compose.app.yml --env-file .env up -d
 
-          # 等待服务启动
-          echo "等待服务启动（60秒）..."
-          sleep 60
+            # 等待服务启动
+            echo "等待服务启动（60秒）..."
+            sleep 60
 
-          # 检查容器状态
-          echo "=== 容器状态 ==="
-          sudo $COMPOSE_CMD -f docker-compose.app.yml ps
+            # 检查容器状态
+            echo "=== 容器状态 ==="
+            sudo $COMPOSE_CMD -f docker-compose.app.yml ps
 
-          # 检查容器日志
-          echo "=== 后端容器日志（最后 30 行）==="
-          sudo docker logs fullstack-backend --tail 30 || echo "后端容器未启动"
+            # 检查容器日志
+            echo "=== 后端容器日志（最后 30 行）==="
+            sudo docker logs fullstack-backend --tail 30 || echo "后端容器未启动"
 
-          echo "=== Nginx 容器日志（最后 30 行）==="
-          sudo docker logs fullstack-nginx --tail 30 || echo "Nginx 容器未启动"
+            echo "=== Nginx 容器日志（最后 30 行）==="
+            sudo docker logs fullstack-nginx --tail 30 || echo "Nginx 容器未启动"
 
-          # 测试本地连接
-          echo "=== 本地连接测试 ==="
-          curl -v http://localhost:8080/api/health || echo "后端本地连接失败"
-          curl -v http://localhost/api/health || echo "Nginx 本地连接失败"
+            # 测试本地连接
+            echo "=== 本地连接测试 ==="
+            curl -v http://localhost:8080/api/health || echo "后端本地连接失败"
+            curl -v http://localhost/api/health || echo "Nginx 本地连接失败"
 
-          # 检查端口监听
-          echo "=== 端口监听检查 ==="
-          sudo netstat -tlnp | grep -E ':(80|8080)' || sudo ss -tlnp | grep -E ':(80|8080)'
-          DEPLOY_EOF
+            # 检查端口监听
+            echo "=== 端口监听检查 ==="
+            sudo netstat -tlnp | grep -E ':(80|8080)' || sudo ss -tlnp | grep -E ':(80|8080)'
+        DEPLOY_EOF
         
         echo "✅ Application server deployed"
     
@@ -371,19 +371,19 @@ jobs:
           ssh -i ~/.ssh/lightsail-keypair.pem \
             -o StrictHostKeyChecking=no \
             ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} <<'DIAG_EOF'
-            echo "=== 容器状态 ==="
-            sudo docker ps -a
-            echo ""
-            echo "=== 后端容器日志 ==="
-            sudo docker logs fullstack-backend --tail 50 || echo "无法获取后端日志"
-            echo ""
-            echo "=== Nginx 容器日志 ==="
-            sudo docker logs fullstack-nginx --tail 50 || echo "无法获取 Nginx 日志"
-            echo ""
-            echo "=== 网络连接测试 ==="
-            curl -v http://localhost:8080/api/health || echo "本地连接失败"
-            curl -v http://localhost/api/health || echo "Nginx 代理失败"
-            DIAG_EOF
+              echo "=== 容器状态 ==="
+              sudo docker ps -a
+              echo ""
+              echo "=== 后端容器日志 ==="
+              sudo docker logs fullstack-backend --tail 50 || echo "无法获取后端日志"
+              echo ""
+              echo "=== Nginx 容器日志 ==="
+              sudo docker logs fullstack-nginx --tail 50 || echo "无法获取 Nginx 日志"
+              echo ""
+              echo "=== 网络连接测试 ==="
+              curl -v http://localhost:8080/api/health || echo "本地连接失败"
+              curl -v http://localhost/api/health || echo "Nginx 代理失败"
+          DIAG_EOF
           exit 1
         fi
         
