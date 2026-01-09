@@ -381,12 +381,7 @@ jobs:
           echo "⚠️  API test failed"
           echo "API 响应: $API_RESPONSE"
           echo "检查数据库连接..."
-          ssh -i ~/.ssh/lightsail-keypair.pem \
-            -o StrictHostKeyChecking=no \
-            ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} <<'LOG_EOF'
-              echo "=== 后端日志（最后 30 行）==="
-              sudo docker logs fullstack-backend --tail 30 || true
-          LOG_EOF
+
           # 不退出，只警告（API 可能因为数据库连接问题失败）
           echo "⚠️  API 测试未通过，但继续完成部署"
         fi
