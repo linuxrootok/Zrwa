@@ -75,58 +75,58 @@ jobs:
         # 确保 Docker 和 Docker Compose 已安装并运行
         ssh -i ~/.ssh/lightsail-keypair.pem \
           -o StrictHostKeyChecking=no \
-          ${{ env.SSH_USER }}@${{ secrets.DB_INSTANCE_IP }} << 'EOF'
-          # 检查并安装 Docker
-          if ! command -v docker &> /dev/null; then
-            echo "安装 Docker..."
-            sudo yum update -y
-            sudo yum install -y docker
-            sudo systemctl start docker
-            sudo systemctl enable docker
-            echo "✅ Docker 安装完成"
-          else
-            echo "✅ Docker 已安装"
-            # 确保 Docker 服务正在运行
-            sudo systemctl start docker || true
-            sudo systemctl enable docker || true
-          fi
-          
-          # 将 ec2-user 添加到 docker 组（避免需要使用 sudo）
-          if ! groups | grep -q docker; then
-            sudo usermod -aG docker ec2-user
-            echo "⚠️  注意: 已添加到 docker 组，但需要重新登录才能生效"
-          fi
-          
-          # 检查 Docker 是否运行
-          if ! sudo docker ps &> /dev/null; then
-            echo "启动 Docker 服务..."
-            sudo systemctl start docker
-            sleep 3
-          fi
-          
-          # 验证 Docker 运行
-          if sudo docker ps &> /dev/null; then
-            echo "✅ Docker daemon 正在运行"
-          else
-            echo "❌ 错误: Docker daemon 未运行"
-            sudo systemctl status docker
-            exit 1
-          fi
-          
-          # 检查并安装 Docker Compose
-          if ! command -v docker-compose &> /dev/null && [ ! -f /usr/local/bin/docker-compose ]; then
-            echo "安装 Docker Compose..."
-            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
-            echo "✅ Docker Compose 安装完成"
-          else
-            echo "✅ Docker Compose 已安装"
-          fi
-          
-          # 验证 Docker Compose
-          COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
-          $COMPOSE_CMD version || sudo $COMPOSE_CMD version || echo "警告: 无法验证 Docker Compose 版本"
-        EOF
+          ${{ env.SSH_USER }}@${{ secrets.DB_INSTANCE_IP }} << 'DB_SETUP_EOF'
+# 检查并安装 Docker
+if ! command -v docker &> /dev/null; then
+  echo "安装 Docker..."
+  sudo yum update -y
+  sudo yum install -y docker
+  sudo systemctl start docker
+  sudo systemctl enable docker
+  echo "✅ Docker 安装完成"
+else
+  echo "✅ Docker 已安装"
+  # 确保 Docker 服务正在运行
+  sudo systemctl start docker || true
+  sudo systemctl enable docker || true
+fi
+
+# 将 ec2-user 添加到 docker 组（避免需要使用 sudo）
+if ! groups | grep -q docker; then
+  sudo usermod -aG docker ec2-user
+  echo "⚠️  注意: 已添加到 docker 组，但需要重新登录才能生效"
+fi
+
+# 检查 Docker 是否运行
+if ! sudo docker ps &> /dev/null; then
+  echo "启动 Docker 服务..."
+  sudo systemctl start docker
+  sleep 3
+fi
+
+# 验证 Docker 运行
+if sudo docker ps &> /dev/null; then
+  echo "✅ Docker daemon 正在运行"
+else
+  echo "❌ 错误: Docker daemon 未运行"
+  sudo systemctl status docker
+  exit 1
+fi
+
+# 检查并安装 Docker Compose
+if ! command -v docker-compose &> /dev/null && [ ! -f /usr/local/bin/docker-compose ]; then
+  echo "安装 Docker Compose..."
+  sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  sudo chmod +x /usr/local/bin/docker-compose
+  echo "✅ Docker Compose 安装完成"
+else
+  echo "✅ Docker Compose 已安装"
+fi
+
+# 验证 Docker Compose
+COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
+$COMPOSE_CMD version || sudo $COMPOSE_CMD version || echo "警告: 无法验证 Docker Compose 版本"
+DB_SETUP_EOF
         
         # Upload database configuration
         scp -i ~/.ssh/lightsail-keypair.pem \
@@ -135,32 +135,35 @@ jobs:
           database/init.sql \
           ${{ env.SSH_USER }}@${{ secrets.DB_INSTANCE_IP }}:/home/ec2-user/
         
-        # Create .env file and start services
+        # Create .env file
         ssh -i ~/.ssh/lightsail-keypair.pem \
           -o StrictHostKeyChecking=no \
-          ${{ env.SSH_USER }}@${{ secrets.DB_INSTANCE_IP }} << 'EOF'
-          cat > /home/ec2-user/.env << EOL
-        MYSQL_ROOT_PASSWORD=${{ secrets.DB_ROOT_PASSWORD }}
-        MYSQL_DATABASE=${{ secrets.DB_NAME }}
-        MYSQL_USER=${{ secrets.DB_USER }}
-        MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }}
-        REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}
-        EOL
-          cd /home/ec2-user
-          
-          # 确保 Docker 正在运行
-          if ! sudo docker ps &> /dev/null; then
-            echo "启动 Docker 服务..."
-            sudo systemctl start docker
-            sleep 3
-          fi
-          
-          # 使用完整路径确保命令可用（使用 sudo 因为可能需要权限）
-          COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
-          sudo $COMPOSE_CMD -f docker-compose.db.yml --env-file .env up -d
-          sleep 15
-          sudo $COMPOSE_CMD -f docker-compose.db.yml ps
-        EOF
+          ${{ env.SSH_USER }}@${{ secrets.DB_INSTANCE_IP }} \
+          "echo 'MYSQL_ROOT_PASSWORD=${{ secrets.DB_ROOT_PASSWORD }}' > /home/ec2-user/.env && \
+           echo 'MYSQL_DATABASE=${{ secrets.DB_NAME }}' >> /home/ec2-user/.env && \
+           echo 'MYSQL_USER=${{ secrets.DB_USER }}' >> /home/ec2-user/.env && \
+           echo 'MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }}' >> /home/ec2-user/.env && \
+           echo 'REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}' >> /home/ec2-user/.env"
+        
+        # Start services
+        ssh -i ~/.ssh/lightsail-keypair.pem \
+          -o StrictHostKeyChecking=no \
+          ${{ env.SSH_USER }}@${{ secrets.DB_INSTANCE_IP }} << 'DB_DEPLOY_EOF'
+cd /home/ec2-user
+
+# 确保 Docker 正在运行
+if ! sudo docker ps &> /dev/null; then
+  echo "启动 Docker 服务..."
+  sudo systemctl start docker
+  sleep 3
+fi
+
+# 使用完整路径确保命令可用
+COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
+sudo $COMPOSE_CMD -f docker-compose.db.yml --env-file .env up -d
+sleep 15
+sudo $COMPOSE_CMD -f docker-compose.db.yml ps
+DB_DEPLOY_EOF
         
         echo "✅ Database server deployed"
     
@@ -171,58 +174,58 @@ jobs:
         # 确保 Docker 和 Docker Compose 已安装并运行
         ssh -i ~/.ssh/lightsail-keypair.pem \
           -o StrictHostKeyChecking=no \
-          ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << 'EOF'
-          # 检查并安装 Docker
-          if ! command -v docker &> /dev/null; then
-            echo "安装 Docker..."
-            sudo yum update -y
-            sudo yum install -y docker
-            sudo systemctl start docker
-            sudo systemctl enable docker
-            echo "✅ Docker 安装完成"
-          else
-            echo "✅ Docker 已安装"
-            # 确保 Docker 服务正在运行
-            sudo systemctl start docker || true
-            sudo systemctl enable docker || true
-          fi
-          
-          # 将 ec2-user 添加到 docker 组（避免需要使用 sudo）
-          if ! groups | grep -q docker; then
-            sudo usermod -aG docker ec2-user
-            echo "⚠️  注意: 已添加到 docker 组，但需要重新登录才能生效"
-          fi
-          
-          # 检查 Docker 是否运行
-          if ! sudo docker ps &> /dev/null; then
-            echo "启动 Docker 服务..."
-            sudo systemctl start docker
-            sleep 3
-          fi
-          
-          # 验证 Docker 运行
-          if sudo docker ps &> /dev/null; then
-            echo "✅ Docker daemon 正在运行"
-          else
-            echo "❌ 错误: Docker daemon 未运行"
-            sudo systemctl status docker
-            exit 1
-          fi
-          
-          # 检查并安装 Docker Compose
-          if ! command -v docker-compose &> /dev/null && [ ! -f /usr/local/bin/docker-compose ]; then
-            echo "安装 Docker Compose..."
-            sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
-            echo "✅ Docker Compose 安装完成"
-          else
-            echo "✅ Docker Compose 已安装"
-          fi
-          
-          # 验证 Docker Compose
-          COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
-          $COMPOSE_CMD version || sudo $COMPOSE_CMD version || echo "警告: 无法验证 Docker Compose 版本"
-        EOF
+          ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << 'APP_SETUP_EOF'
+# 检查并安装 Docker
+if ! command -v docker &> /dev/null; then
+  echo "安装 Docker..."
+  sudo yum update -y
+  sudo yum install -y docker
+  sudo systemctl start docker
+  sudo systemctl enable docker
+  echo "✅ Docker 安装完成"
+else
+  echo "✅ Docker 已安装"
+  # 确保 Docker 服务正在运行
+  sudo systemctl start docker || true
+  sudo systemctl enable docker || true
+fi
+
+# 将 ec2-user 添加到 docker 组（避免需要使用 sudo）
+if ! groups | grep -q docker; then
+  sudo usermod -aG docker ec2-user
+  echo "⚠️  注意: 已添加到 docker 组，但需要重新登录才能生效"
+fi
+
+# 检查 Docker 是否运行
+if ! sudo docker ps &> /dev/null; then
+  echo "启动 Docker 服务..."
+  sudo systemctl start docker
+  sleep 3
+fi
+
+# 验证 Docker 运行
+if sudo docker ps &> /dev/null; then
+  echo "✅ Docker daemon 正在运行"
+else
+  echo "❌ 错误: Docker daemon 未运行"
+  sudo systemctl status docker
+  exit 1
+fi
+
+# 检查并安装 Docker Compose
+if ! command -v docker-compose &> /dev/null && [ ! -f /usr/local/bin/docker-compose ]; then
+  echo "安装 Docker Compose..."
+  sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  sudo chmod +x /usr/local/bin/docker-compose
+  echo "✅ Docker Compose 安装完成"
+else
+  echo "✅ Docker Compose 已安装"
+fi
+
+# 验证 Docker Compose
+COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
+$COMPOSE_CMD version || sudo $COMPOSE_CMD version || echo "警告: 无法验证 Docker Compose 版本"
+APP_SETUP_EOF
         
         # Upload application configuration
         echo "上传应用配置文件..."
@@ -282,60 +285,60 @@ jobs:
         ssh -i ~/.ssh/lightsail-keypair.pem \
           -o StrictHostKeyChecking=no \
           ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << 'DEPLOY_EOF'
-          cd /home/ec2-user
-          
-          # 加载 Docker 镜像（如果存在）
-          if [ -f backend-image.tar.gz ]; then
-            echo "加载 Docker 镜像..."
-            sudo docker load < backend-image.tar.gz
-            echo "✅ Docker 镜像已加载"
-          fi
-          
-          # 确保 Docker 正在运行
-          if ! sudo docker ps &> /dev/null; then
-            echo "启动 Docker 服务..."
-            sudo systemctl start docker
-            sleep 3
-          fi
-          
-          # 确保目录存在
-          mkdir -p frontend-build nginx
-          
-          # 使用完整路径确保命令可用
-          COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
-          
-          # 停止旧容器（如果存在）
-          echo "停止旧容器..."
-          sudo $COMPOSE_CMD -f docker-compose.app.yml down 2>/dev/null || true
-          
-          # 启动服务（不使用 --build，因为镜像已在 GitHub Actions 中构建）
-          echo "启动应用服务..."
-          sudo $COMPOSE_CMD -f docker-compose.app.yml --env-file .env up -d
-          
-          # 等待服务启动
-          echo "等待服务启动（60秒）..."
-          sleep 60
-          
-          # 检查容器状态
-          echo "=== 容器状态 ==="
-          sudo $COMPOSE_CMD -f docker-compose.app.yml ps
-          
-          # 检查容器日志
-          echo "=== 后端容器日志（最后 30 行）==="
-          sudo docker logs fullstack-backend --tail 30 || echo "后端容器未启动"
-          
-          echo "=== Nginx 容器日志（最后 30 行）==="
-          sudo docker logs fullstack-nginx --tail 30 || echo "Nginx 容器未启动"
-          
-          # 测试本地连接
-          echo "=== 本地连接测试 ==="
-          curl -v http://localhost:8080/api/health || echo "后端本地连接失败"
-          curl -v http://localhost/api/health || echo "Nginx 本地连接失败"
-          
-          # 检查端口监听
-          echo "=== 端口监听检查 ==="
-          sudo netstat -tlnp | grep -E ':(80|8080)' || sudo ss -tlnp | grep -E ':(80|8080)'
-        DEPLOY_EOF
+cd /home/ec2-user
+
+# 加载 Docker 镜像（如果存在）
+if [ -f backend-image.tar.gz ]; then
+  echo "加载 Docker 镜像..."
+  sudo docker load < backend-image.tar.gz
+  echo "✅ Docker 镜像已加载"
+fi
+
+# 确保 Docker 正在运行
+if ! sudo docker ps &> /dev/null; then
+  echo "启动 Docker 服务..."
+  sudo systemctl start docker
+  sleep 3
+fi
+
+# 确保目录存在
+mkdir -p frontend-build nginx
+
+# 使用完整路径确保命令可用
+COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
+
+# 停止旧容器（如果存在）
+echo "停止旧容器..."
+sudo $COMPOSE_CMD -f docker-compose.app.yml down 2>/dev/null || true
+
+# 启动服务（不使用 --build，因为镜像已在 GitHub Actions 中构建）
+echo "启动应用服务..."
+sudo $COMPOSE_CMD -f docker-compose.app.yml --env-file .env up -d
+
+# 等待服务启动
+echo "等待服务启动（60秒）..."
+sleep 60
+
+# 检查容器状态
+echo "=== 容器状态 ==="
+sudo $COMPOSE_CMD -f docker-compose.app.yml ps
+
+# 检查容器日志
+echo "=== 后端容器日志（最后 30 行）==="
+sudo docker logs fullstack-backend --tail 30 || echo "后端容器未启动"
+
+echo "=== Nginx 容器日志（最后 30 行）==="
+sudo docker logs fullstack-nginx --tail 30 || echo "Nginx 容器未启动"
+
+# 测试本地连接
+echo "=== 本地连接测试 ==="
+curl -v http://localhost:8080/api/health || echo "后端本地连接失败"
+curl -v http://localhost/api/health || echo "Nginx 本地连接失败"
+
+# 检查端口监听
+echo "=== 端口监听检查 ==="
+sudo netstat -tlnp | grep -E ':(80|8080)' || sudo ss -tlnp | grep -E ':(80|8080)'
+DEPLOY_EOF
         
         echo "✅ Application server deployed"
     
@@ -367,20 +370,20 @@ jobs:
           echo "⚠️  健康检查失败，检查容器状态..."
           ssh -i ~/.ssh/lightsail-keypair.pem \
             -o StrictHostKeyChecking=no \
-            ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << 'DIAG_EOF'
-            echo "=== 容器状态 ==="
-            sudo docker ps -a
-            echo ""
-            echo "=== 后端容器日志 ==="
-            sudo docker logs fullstack-backend --tail 50 || echo "无法获取后端日志"
-            echo ""
-            echo "=== Nginx 容器日志 ==="
-            sudo docker logs fullstack-nginx --tail 50 || echo "无法获取 Nginx 日志"
-            echo ""
-            echo "=== 网络连接测试 ==="
-            curl -v http://localhost:8080/api/health || echo "本地连接失败"
-            curl -v http://localhost/api/health || echo "Nginx 代理失败"
-          DIAG_EOF
+            ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} <<'DIAG_EOF'
+echo "=== 容器状态 ==="
+sudo docker ps -a
+echo ""
+echo "=== 后端容器日志 ==="
+sudo docker logs fullstack-backend --tail 50 || echo "无法获取后端日志"
+echo ""
+echo "=== Nginx 容器日志 ==="
+sudo docker logs fullstack-nginx --tail 50 || echo "无法获取 Nginx 日志"
+echo ""
+echo "=== 网络连接测试 ==="
+curl -v http://localhost:8080/api/health || echo "本地连接失败"
+curl -v http://localhost/api/health || echo "Nginx 代理失败"
+DIAG_EOF
           exit 1
         fi
         
@@ -400,10 +403,10 @@ jobs:
           echo "检查数据库连接..."
           ssh -i ~/.ssh/lightsail-keypair.pem \
             -o StrictHostKeyChecking=no \
-            ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << 'LOG_EOF'
-            echo "=== 后端日志（最后 30 行）==="
-            sudo docker logs fullstack-backend --tail 30 || true
-          LOG_EOF
+            ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} <<'LOG_EOF'
+echo "=== 后端日志（最后 30 行）==="
+sudo docker logs fullstack-backend --tail 30 || true
+LOG_EOF
           # 不退出，只警告（API 可能因为数据库连接问题失败）
           echo "⚠️  API 测试未通过，但继续完成部署"
         fi
