@@ -412,4 +412,3 @@ jobs:
         echo "Application Server: http://${{ secrets.APP_INSTANCE_IP }}"
         echo "Database Server: ${{ secrets.DB_INSTANCE_IP }}"
         echo "✅ Deployment successful!"
-
