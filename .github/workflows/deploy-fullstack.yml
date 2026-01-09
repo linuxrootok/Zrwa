@@ -177,14 +177,23 @@ jobs:
         npm run build
         echo "✅ Frontend built"
     
-    # 如果前端没有变更，但需要部署，使用上次的构建产物
+    # 如果前端没有变更，但需要部署，检查构建产物是否存在
     - name: Check frontend build exists
       if: steps.changes.outputs.frontend_changed == 'false'
       run: |
         if [ ! -d "frontend/build" ] || [ -z "$(ls -A frontend/build 2>/dev/null)" ]; then
-          echo "⚠️  警告: 前端未变更但构建目录不存在，将创建占位文件"
-          mkdir -p frontend/build
-          echo '<html><body><h1>Frontend placeholder</h1></body></html>' > frontend/build/index.html
+          echo "⚠️  警告: 前端未变更但构建目录不存在，重新构建前端"
+          cd frontend
+          # 检查 package-lock.json 是否存在
+          if [ -f package-lock.json ]; then
+            echo "✅ 检测到 package-lock.json，尝试使用 npm ci..."
+            npm ci --prefer-offline --no-audit 2>&1 || npm install --prefer-offline --no-audit
+          else
+            echo "使用 npm install..."
+            npm install --prefer-offline --no-audit
+          fi
+          npm run build
+          echo "✅ 前端重新构建完成"
         else
           echo "✅ 使用现有的前端构建产物"
         fi
@@ -542,7 +551,7 @@ jobs:
           ssh -i ~/.ssh/lightsail-keypair.pem \
             -o StrictHostKeyChecking=no \
             ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} \
-            "mkdir -p /home/ec2-user/frontend-build"
+            "mkdir -p /home/ec2-user/frontend-build && rm -rf /home/ec2-user/frontend-build/*"
           
           # 上传文件
           scp -i ~/.ssh/lightsail-keypair.pem \
@@ -556,18 +565,14 @@ jobs:
             ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} \
             "chmod -R 755 /home/ec2-user/frontend-build && \
              find /home/ec2-user/frontend-build -type f -exec chmod 644 {} \; && \
-             find /home/ec2-user/frontend-build -type d -exec chmod 755 {} \;"
+             find /home/ec2-user/frontend-build -type d -exec chmod 755 {} \; && \
+             ls -la /home/ec2-user/frontend-build/"
           
           echo "✅ 前端文件已上传并设置权限"
         else
-          echo "⚠️  警告: frontend/build 目录为空或不存在，创建占位文件"
-          ssh -i ~/.ssh/lightsail-keypair.pem \
-            -o StrictHostKeyChecking=no \
-            ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} \
-            "mkdir -p /home/ec2-user/frontend-build && \
-             echo '<html><body><h1>Frontend placeholder</h1></body></html>' > /home/ec2-user/frontend-build/index.html && \
-             chmod -R 755 /home/ec2-user/frontend-build && \
-             chmod 644 /home/ec2-user/frontend-build/index.html"
+          echo "❌ 错误: frontend/build 目录为空或不存在"
+          echo "请检查前端构建是否成功"
+          exit 1
         fi
         
         # Create .env file
