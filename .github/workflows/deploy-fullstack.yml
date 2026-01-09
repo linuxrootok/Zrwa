@@ -171,20 +171,56 @@ jobs:
       run: |
         echo "=== Configuring Firewall Rules ==="
         
+        # 检查当前端口状态
+        echo "检查当前端口状态..."
+        aws lightsail get-instance-port-states \
+          --instance-name ${{ env.APP_INSTANCE_NAME }} \
+          --region ${{ env.REGION }} \
+          --query 'portStates[*].[fromPort,toPort,protocol]' \
+          --output table || echo "无法获取端口状态"
+        
         # 开放应用服务器端口 80 (HTTP)
+        echo ""
         echo "开放应用服务器端口 80 (HTTP)..."
-        aws lightsail open-instance-public-ports \
+        if aws lightsail open-instance-public-ports \
           --instance-name ${{ env.APP_INSTANCE_NAME }} \
           --port-info fromPort=80,toPort=80,protocol=TCP \
-          --region ${{ env.REGION }} 2>/dev/null || echo "⚠️  端口 80 可能已开放或配置失败"
+          --region ${{ env.REGION }} 2>&1; then
+          echo "✅ 端口 80 开放成功"
+        else
+          echo "⚠️  端口 80 可能已开放或配置失败，继续..."
+        fi
         
         # 开放应用服务器端口 443 (HTTPS，为后续使用)
+        echo ""
         echo "开放应用服务器端口 443 (HTTPS)..."
-        aws lightsail open-instance-public-ports \
+        if aws lightsail open-instance-public-ports \
           --instance-name ${{ env.APP_INSTANCE_NAME }} \
           --port-info fromPort=443,toPort=443,protocol=TCP \
-          --region ${{ env.REGION }} 2>/dev/null || echo "⚠️  端口 443 可能已开放或配置失败"
+          --region ${{ env.REGION }} 2>&1; then
+          echo "✅ 端口 443 开放成功"
+        else
+          echo "⚠️  端口 443 可能已开放或配置失败，继续..."
+        fi
         
+        # 验证端口是否已开放
+        echo ""
+        echo "验证端口状态..."
+        sleep 2
+        PORT_80_STATUS=$(aws lightsail get-instance-port-states \
+          --instance-name ${{ env.APP_INSTANCE_NAME }} \
+          --region ${{ env.REGION }} \
+          --query 'portStates[?fromPort==`80`]' \
+          --output json 2>/dev/null || echo "[]")
+        
+        if echo "$PORT_80_STATUS" | grep -q "80"; then
+          echo "✅ 端口 80 已在防火墙中开放"
+        else
+          echo "❌ 警告: 端口 80 可能未在防火墙中开放"
+          echo "请手动在 AWS Lightsail 控制台中检查并开放端口 80"
+        fi
+        
+        echo ""
         echo "✅ 防火墙配置完成"
     
     - name: Deploy application server
