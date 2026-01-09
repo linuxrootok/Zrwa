@@ -7,9 +7,7 @@
 services:
   # Java Backend (Tomcat)
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: fullstack-backend:latest
     container_name: fullstack-backend
     ports:
       - "8080:8080"

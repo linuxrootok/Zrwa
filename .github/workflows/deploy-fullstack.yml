@@ -55,6 +55,12 @@ jobs:
         mvn clean package -DskipTests
         echo "✅ Backend WAR built"
     
+    - name: Build Docker image
+      run: |
+        echo "构建 Docker 镜像..."
+        docker build -t fullstack-backend:latest ./backend
+        echo "✅ Docker 镜像构建完成"
+    
     - name: Build frontend
       run: |
         cd frontend
@@ -232,11 +238,16 @@ jobs:
           ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} \
           "mkdir -p /home/ec2-user/nginx && mv /home/ec2-user/nginx.conf /home/ec2-user/nginx/nginx.conf"
         
-        # Upload backend WAR
+        # Save Docker image as tar file (already built in previous step)
+        echo "保存 Docker 镜像..."
+        docker save fullstack-backend:latest | gzip > /tmp/backend-image.tar.gz
+        
+        # Upload backend image
+        echo "上传 Docker 镜像..."
         scp -i ~/.ssh/lightsail-keypair.pem \
           -o StrictHostKeyChecking=no \
-          backend/target/app.war \
-          ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }}:/home/ec2-user/backend.war
+          /tmp/backend-image.tar.gz \
+          ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }}:/home/ec2-user/
         
         # Upload frontend build
         echo "上传前端构建文件..."
@@ -267,25 +278,17 @@ jobs:
            echo 'REDIS_PORT=6379' >> /home/ec2-user/.env && \
            echo 'REDIS_PASSWORD=${{ secrets.REDIS_PASSWORD }}' >> /home/ec2-user/.env"
         
-        # Upload backend source code for building
-        echo "上传后端源代码..."
-        tar -czf /tmp/backend-src.tar.gz -C backend pom.xml src
-        scp -i ~/.ssh/lightsail-keypair.pem \
-          -o StrictHostKeyChecking=no \
-          /tmp/backend-src.tar.gz \
-          ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }}:/home/ec2-user/
-        
         # Start services
         ssh -i ~/.ssh/lightsail-keypair.pem \
           -o StrictHostKeyChecking=no \
           ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << 'DEPLOY_EOF'
           cd /home/ec2-user
           
-          # 解压后端源代码
-          if [ -f backend-src.tar.gz ]; then
-            mkdir -p backend
-            tar -xzf backend-src.tar.gz -C backend
-            echo "✅ 后端源代码已解压"
+          # 加载 Docker 镜像（如果存在）
+          if [ -f backend-image.tar.gz ]; then
+            echo "加载 Docker 镜像..."
+            sudo docker load < backend-image.tar.gz
+            echo "✅ Docker 镜像已加载"
           fi
           
           # 确保 Docker 正在运行
@@ -305,9 +308,9 @@ jobs:
           echo "停止旧容器..."
           sudo $COMPOSE_CMD -f docker-compose.app.yml down 2>/dev/null || true
           
-          # 启动服务
+          # 启动服务（不使用 --build，因为镜像已在 GitHub Actions 中构建）
           echo "启动应用服务..."
-          sudo $COMPOSE_CMD -f docker-compose.app.yml --env-file .env up -d --build
+          sudo $COMPOSE_CMD -f docker-compose.app.yml --env-file .env up -d
           
           # 等待服务启动
           echo "等待服务启动（60秒）..."
