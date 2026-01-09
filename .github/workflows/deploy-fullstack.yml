@@ -368,19 +368,19 @@ jobs:
           ssh -i ~/.ssh/lightsail-keypair.pem \
             -o StrictHostKeyChecking=no \
             ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << 'DIAG_EOF'
-            echo "=== 容器状态 ==="
-            sudo docker ps -a
-            echo ""
-            echo "=== 后端容器日志 ==="
-            sudo docker logs fullstack-backend --tail 50 || echo "无法获取后端日志"
-            echo ""
-            echo "=== Nginx 容器日志 ==="
-            sudo docker logs fullstack-nginx --tail 50 || echo "无法获取 Nginx 日志"
-            echo ""
-            echo "=== 网络连接测试 ==="
-            curl -v http://localhost:8080/api/health || echo "本地连接失败"
-            curl -v http://localhost/api/health || echo "Nginx 代理失败"
-          DIAG_EOF
+echo "=== 容器状态 ==="
+sudo docker ps -a
+echo ""
+echo "=== 后端容器日志 ==="
+sudo docker logs fullstack-backend --tail 50 || echo "无法获取后端日志"
+echo ""
+echo "=== Nginx 容器日志 ==="
+sudo docker logs fullstack-nginx --tail 50 || echo "无法获取 Nginx 日志"
+echo ""
+echo "=== 网络连接测试 ==="
+curl -v http://localhost:8080/api/health || echo "本地连接失败"
+curl -v http://localhost/api/health || echo "Nginx 代理失败"
+DIAG_EOF
           exit 1
         fi
         
@@ -401,9 +401,9 @@ jobs:
           ssh -i ~/.ssh/lightsail-keypair.pem \
             -o StrictHostKeyChecking=no \
             ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << 'LOG_EOF'
-            echo "=== 后端日志（最后 30 行）==="
-            sudo docker logs fullstack-backend --tail 30 || true
-          LOG_EOF
+echo "=== 后端日志（最后 30 行）==="
+sudo docker logs fullstack-backend --tail 30 || true
+LOG_EOF
           # 不退出，只警告（API 可能因为数据库连接问题失败）
           echo "⚠️  API 测试未通过，但继续完成部署"
         fi
