@@ -167,6 +167,26 @@ jobs:
         
         echo "✅ Database server deployed"
     
+    - name: Configure firewall rules
+      run: |
+        echo "=== Configuring Firewall Rules ==="
+        
+        # 开放应用服务器端口 80 (HTTP)
+        echo "开放应用服务器端口 80 (HTTP)..."
+        aws lightsail open-instance-public-ports \
+          --instance-name ${{ env.APP_INSTANCE_NAME }} \
+          --port-info fromPort=80,toPort=80,protocol=TCP \
+          --region ${{ env.REGION }} 2>/dev/null || echo "⚠️  端口 80 可能已开放或配置失败"
+        
+        # 开放应用服务器端口 443 (HTTPS，为后续使用)
+        echo "开放应用服务器端口 443 (HTTPS)..."
+        aws lightsail open-instance-public-ports \
+          --instance-name ${{ env.APP_INSTANCE_NAME }} \
+          --port-info fromPort=443,toPort=443,protocol=TCP \
+          --region ${{ env.REGION }} 2>/dev/null || echo "⚠️  端口 443 可能已开放或配置失败"
+        
+        echo "✅ 防火墙配置完成"
+    
     - name: Deploy application server
       run: |
         echo "=== Deploying Application Server ==="
