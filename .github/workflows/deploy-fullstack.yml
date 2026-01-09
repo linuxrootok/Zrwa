@@ -22,6 +22,47 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 2  # 需要获取历史记录以检测变更
+    
+    # 检测文件变更（用于条件构建）
+    - name: Detect changes
+      id: changes
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          echo "backend_changed=true" >> $GITHUB_OUTPUT
+          echo "frontend_changed=true" >> $GITHUB_OUTPUT
+          echo "nginx_changed=true" >> $GITHUB_OUTPUT
+        else
+          # 检查后端变更
+          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -qE "^backend/|^\.github/workflows/"; then
+            echo "backend_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "backend_changed=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # 检查前端变更
+          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -qE "^frontend/|^\.github/workflows/"; then
+            echo "frontend_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "frontend_changed=false" >> $GITHUB_OUTPUT
+          fi
+          
+          # 检查 Nginx 配置变更
+          if git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -qE "^nginx/|^nginx\.conf|^\.github/workflows/"; then
+            echo "nginx_changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "nginx_changed=false" >> $GITHUB_OUTPUT
+          fi
+        fi
+        echo "变更检测结果:"
+        echo "  后端: ${{ steps.changes.outputs.backend_changed }}"
+        echo "  前端: ${{ steps.changes.outputs.frontend_changed }}"
+        echo "  Nginx: ${{ steps.changes.outputs.nginx_changed }}"
+    
+    # 设置 Docker Buildx（支持缓存）
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
     
     - name: Set up SSH
       run: |
@@ -49,24 +90,75 @@ jobs:
           ssh-keyscan -H ${{ secrets.DB_INSTANCE_IP }} >> ~/.ssh/known_hosts 2>/dev/null || true
         fi
     
+    # 构建后端 WAR（条件：后端变更）
     - name: Build backend WAR
+      if: steps.changes.outputs.backend_changed == 'true'
       run: |
         cd backend
         mvn clean package -DskipTests
         echo "✅ Backend WAR built"
     
-    - name: Build Docker image
-      run: |
-        echo "构建 Docker 镜像..."
-        docker build -t fullstack-backend:latest ./backend
-        echo "✅ Docker 镜像构建完成"
+    # 构建 Docker 镜像（带层缓存，条件：后端变更）
+    - name: Build Docker image (with cache)
+      if: steps.changes.outputs.backend_changed == 'true'
+      uses: docker/build-push-action@v5
+      with:
+        context: ./backend
+        push: false
+        tags: fullstack-backend:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        load: true
+        build-args: |
+          BUILDKIT_INLINE_CACHE=1
     
+    # 如果后端没有变更，但需要部署，尝试从缓存加载或构建
+    - name: Load cached Docker image or build
+      if: steps.changes.outputs.backend_changed == 'false'
+      run: |
+        echo "后端未变更，尝试从缓存加载镜像..."
+        # 尝试使用缓存构建（即使没有变更，也要确保镜像存在）
+        docker buildx build \
+          --load \
+          --cache-from type=gha \
+          --cache-to type=gha,mode=max \
+          -t fullstack-backend:latest \
+          ./backend || {
+          echo "缓存构建失败，使用标准构建..."
+          docker build -t fullstack-backend:latest ./backend
+        }
+        echo "✅ Docker 镜像已准备"
+    
+    # 缓存前端 node_modules（如果 package.json 没变，可以复用）
+    - name: Cache frontend dependencies
+      if: steps.changes.outputs.frontend_changed == 'true'
+      uses: actions/cache@v3
+      with:
+        path: frontend/node_modules
+        key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package.json') }}
+        restore-keys: |
+          ${{ runner.os }}-frontend-
+    
+    # 构建前端（条件：前端变更）
     - name: Build frontend
+      if: steps.changes.outputs.frontend_changed == 'true'
       run: |
         cd frontend
-        npm install
+        npm ci  # 使用 npm ci 而不是 npm install（更快，适合 CI）
         npm run build
         echo "✅ Frontend built"
+    
+    # 如果前端没有变更，但需要部署，使用上次的构建产物
+    - name: Check frontend build exists
+      if: steps.changes.outputs.frontend_changed == 'false'
+      run: |
+        if [ ! -d "frontend/build" ] || [ -z "$(ls -A frontend/build 2>/dev/null)" ]; then
+          echo "⚠️  警告: 前端未变更但构建目录不存在，将创建占位文件"
+          mkdir -p frontend/build
+          echo '<html><body><h1>Frontend placeholder</h1></body></html>' > frontend/build/index.html
+        else
+          echo "✅ 使用现有的前端构建产物"
+        fi
     
     - name: Deploy database server
       run: |

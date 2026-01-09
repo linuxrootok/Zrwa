@@ -1,0 +1,14 @@
+target/
+.git/
+.idea/
+*.iml
+.DS_Store
+node_modules/
+*.log
+*.class
+.settings/
+.project
+.classpath
+*.war
+!target/app.war
+
