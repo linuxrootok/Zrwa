@@ -167,6 +167,44 @@ jobs:
         
         echo "✅ Database server deployed"
     
+    - name: Check instance status
+      run: |
+        echo "=== Checking Instance Status ==="
+        
+        # 检查应用服务器实例状态
+        echo "检查应用服务器实例状态..."
+        INSTANCE_STATE=$(aws lightsail get-instance \
+          --instance-name ${{ env.APP_INSTANCE_NAME }} \
+          --region ${{ env.REGION }} \
+          --query 'instance.state.name' \
+          --output text 2>/dev/null || echo "unknown")
+        
+        echo "实例状态: $INSTANCE_STATE"
+        
+        if [ "$INSTANCE_STATE" != "running" ]; then
+          echo "⚠️  警告: 实例状态为 $INSTANCE_STATE，不是 running"
+          echo "尝试启动实例..."
+          aws lightsail start-instance \
+            --instance-name ${{ env.APP_INSTANCE_NAME }} \
+            --region ${{ env.REGION }} || true
+          echo "等待实例启动..."
+          sleep 30
+        fi
+        
+        # 获取实例 IP
+        INSTANCE_IP=$(aws lightsail get-instance \
+          --instance-name ${{ env.APP_INSTANCE_NAME }} \
+          --region ${{ env.REGION }} \
+          --query 'instance.publicIpAddress' \
+          --output text 2>/dev/null || echo "")
+        
+        if [ -n "$INSTANCE_IP" ]; then
+          echo "实例 IP: $INSTANCE_IP"
+          echo "请确保 GitHub Secret APP_INSTANCE_IP 设置为: $INSTANCE_IP"
+        else
+          echo "⚠️  无法获取实例 IP"
+        fi
+    
     - name: Configure firewall rules
       run: |
         echo "=== Configuring Firewall Rules ==="
@@ -178,6 +216,18 @@ jobs:
           --region ${{ env.REGION }} \
           --query 'portStates[*].[fromPort,toPort,protocol]' \
           --output table || echo "无法获取端口状态"
+        
+        # 开放应用服务器端口 22 (SSH) - 必需
+        echo ""
+        echo "开放应用服务器端口 22 (SSH)..."
+        if aws lightsail open-instance-public-ports \
+          --instance-name ${{ env.APP_INSTANCE_NAME }} \
+          --port-info fromPort=22,toPort=22,protocol=TCP \
+          --region ${{ env.REGION }} 2>&1; then
+          echo "✅ 端口 22 开放成功"
+        else
+          echo "⚠️  端口 22 可能已开放或配置失败，继续..."
+        fi
         
         # 开放应用服务器端口 80 (HTTP)
         echo ""
@@ -206,22 +256,75 @@ jobs:
         # 验证端口是否已开放
         echo ""
         echo "验证端口状态..."
-        sleep 2
+        sleep 3
+        
+        PORT_22_STATUS=$(aws lightsail get-instance-port-states \
+          --instance-name ${{ env.APP_INSTANCE_NAME }} \
+          --region ${{ env.REGION }} \
+          --query 'portStates[?fromPort==`22`]' \
+          --output json 2>/dev/null || echo "[]")
+        
         PORT_80_STATUS=$(aws lightsail get-instance-port-states \
           --instance-name ${{ env.APP_INSTANCE_NAME }} \
           --region ${{ env.REGION }} \
           --query 'portStates[?fromPort==`80`]' \
           --output json 2>/dev/null || echo "[]")
         
-        if echo "$PORT_80_STATUS" | grep -q "80"; then
-          echo "✅ 端口 80 已在防火墙中开放"
+        if echo "$PORT_22_STATUS" | grep -q "22"; then
+          echo "✅ 端口 22 (SSH) 已在防火墙中开放"
         else
-          echo "❌ 警告: 端口 80 可能未在防火墙中开放"
-          echo "请手动在 AWS Lightsail 控制台中检查并开放端口 80"
+          echo "❌ 警告: 端口 22 (SSH) 可能未在防火墙中开放"
+          echo "SSH 连接将失败！请手动在 AWS Lightsail 控制台中开放端口 22"
+        fi
+        
+        if echo "$PORT_80_STATUS" | grep -q "80"; then
+          echo "✅ 端口 80 (HTTP) 已在防火墙中开放"
+        else
+          echo "❌ 警告: 端口 80 (HTTP) 可能未在防火墙中开放"
+          echo "HTTP 访问将失败！请手动在 AWS Lightsail 控制台中开放端口 80"
         fi
         
         echo ""
         echo "✅ 防火墙配置完成"
+    
+    - name: Wait for SSH availability
+      run: |
+        echo "=== Waiting for SSH Availability ==="
+        
+        MAX_SSH_WAIT=120
+        SSH_WAIT_TIME=0
+        SSH_READY=false
+        
+        echo "等待 SSH 连接可用（最多 $MAX_SSH_WAIT 秒）..."
+        
+        while [ $SSH_WAIT_TIME -lt $MAX_SSH_WAIT ]; do
+          if ssh -i ~/.ssh/lightsail-keypair.pem \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=5 \
+            -o BatchMode=yes \
+            ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} \
+            "echo 'SSH ready'" &> /dev/null; then
+            echo "✅ SSH 连接已就绪"
+            SSH_READY=true
+            break
+          fi
+          
+          echo "  等待 SSH 就绪... ($SSH_WAIT_TIME/$MAX_SSH_WAIT 秒)"
+          sleep 10
+          SSH_WAIT_TIME=$((SSH_WAIT_TIME + 10))
+        done
+        
+        if [ "$SSH_READY" = false ]; then
+          echo "❌ 错误: SSH 连接超时"
+          echo "请检查："
+          echo "1. 实例是否运行: aws lightsail get-instance --instance-name ${{ env.APP_INSTANCE_NAME }} --region ${{ env.REGION }}"
+          echo "2. 端口 22 是否开放: aws lightsail get-instance-port-states --instance-name ${{ env.APP_INSTANCE_NAME }} --region ${{ env.REGION }}"
+          echo "3. APP_INSTANCE_IP secret 是否正确"
+          exit 1
+        fi
+        
+        echo "等待 5 秒让 SSH 完全就绪..."
+        sleep 5
     
     - name: Deploy application server
       run: |
@@ -230,6 +333,9 @@ jobs:
         # 确保 Docker 和 Docker Compose 已安装并运行
         ssh -i ~/.ssh/lightsail-keypair.pem \
           -o StrictHostKeyChecking=no \
+          -o ConnectTimeout=10 \
+          -o ServerAliveInterval=60 \
+          -o ServerAliveCountMax=3 \
           ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} << 'APP_SETUP_EOF'
             # 检查并安装 Docker
             if ! command -v docker &> /dev/null; then
