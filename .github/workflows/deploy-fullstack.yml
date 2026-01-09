@@ -538,17 +538,36 @@ jobs:
         # Upload frontend build
         echo "上传前端构建文件..."
         if [ -d "frontend/build" ] && [ "$(ls -A frontend/build 2>/dev/null)" ]; then
+          # 确保目录存在
+          ssh -i ~/.ssh/lightsail-keypair.pem \
+            -o StrictHostKeyChecking=no \
+            ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} \
+            "mkdir -p /home/ec2-user/frontend-build"
+          
+          # 上传文件
           scp -i ~/.ssh/lightsail-keypair.pem \
             -o StrictHostKeyChecking=no \
             -r frontend/build/* \
             ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }}:/home/ec2-user/frontend-build/
-          echo "✅ 前端文件已上传"
+          
+          # 设置正确的权限（Nginx 容器内的用户需要读取权限）
+          ssh -i ~/.ssh/lightsail-keypair.pem \
+            -o StrictHostKeyChecking=no \
+            ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} \
+            "chmod -R 755 /home/ec2-user/frontend-build && \
+             find /home/ec2-user/frontend-build -type f -exec chmod 644 {} \; && \
+             find /home/ec2-user/frontend-build -type d -exec chmod 755 {} \;"
+          
+          echo "✅ 前端文件已上传并设置权限"
         else
           echo "⚠️  警告: frontend/build 目录为空或不存在，创建占位文件"
           ssh -i ~/.ssh/lightsail-keypair.pem \
             -o StrictHostKeyChecking=no \
             ${{ env.SSH_USER }}@${{ secrets.APP_INSTANCE_IP }} \
-            "mkdir -p /home/ec2-user/frontend-build && echo '<html><body><h1>Frontend placeholder</h1></body></html>' > /home/ec2-user/frontend-build/index.html"
+            "mkdir -p /home/ec2-user/frontend-build && \
+             echo '<html><body><h1>Frontend placeholder</h1></body></html>' > /home/ec2-user/frontend-build/index.html && \
+             chmod -R 755 /home/ec2-user/frontend-build && \
+             chmod 644 /home/ec2-user/frontend-build/index.html"
         fi
         
         # Create .env file
@@ -584,8 +603,11 @@ jobs:
               sleep 3
             fi
 
-            # 确保目录存在
+            # 确保目录存在并设置正确的权限
             mkdir -p frontend-build nginx
+            chmod -R 755 frontend-build 2>/dev/null || true
+            find frontend-build -type f -exec chmod 644 {} \; 2>/dev/null || true
+            find frontend-build -type d -exec chmod 755 {} \; 2>/dev/null || true
 
             # 使用完整路径确保命令可用
             COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
