@@ -126,7 +126,7 @@ jobs:
             # 验证 Docker Compose
             COMPOSE_CMD=$(command -v docker-compose 2>/dev/null || echo "/usr/local/bin/docker-compose")
             $COMPOSE_CMD version || sudo $COMPOSE_CMD version || echo "警告: 无法验证 Docker Compose 版本"
-          DB_SETUP_EOF
+        DB_SETUP_EOF
         
         # Upload database configuration
         scp -i ~/.ssh/lightsail-keypair.pem \
