@@ -41,11 +41,11 @@
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
 
-        <!-- MySQL Connector -->
+        <!-- MySQL Connector (compatible with MySQL 5.7) -->
         <dependency>
             <groupId>mysql</groupId>
             <artifactId>mysql-connector-java</artifactId>
-            <version>5.1.49</version>
+            <version>8.0.33</version>
         </dependency>
 
         <!-- Redis Client (Lettuce) -->
