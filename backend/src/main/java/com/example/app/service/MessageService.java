@@ -5,8 +5,6 @@ import com.example.app.repository.MessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,7 +18,8 @@ public class MessageService {
     @Autowired
     private MessageRepository messageRepository;
 
-    @Cacheable(value = "messages")
+    // 暂时禁用缓存，避免 Redis 连接问题导致错误
+    // @Cacheable(value = "messages")
     public List<Message> getAllMessages() {
         try {
             logger.info("Fetching all messages from database");
@@ -29,12 +28,13 @@ public class MessageService {
             return messages;
         } catch (Exception e) {
             logger.error("Error fetching messages: {}", e.getMessage(), e);
+            logger.error("Stack trace: ", e);
             throw new RuntimeException("Failed to fetch messages: " + e.getMessage(), e);
         }
     }
 
     @Transactional
-    @CacheEvict(value = "messages", allEntries = true)
+    // @CacheEvict(value = "messages", allEntries = true)  // 暂时禁用缓存
     public Message saveMessage(Message message) {
         try {
             logger.info("Saving message: {}", message.getContent());
