@@ -1,4 +1,4 @@
-version: '3.8'
+# version: '3.8'  # Obsolete in Docker Compose v2+
 
 services:
   # MySQL 5.7 Database

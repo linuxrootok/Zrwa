@@ -1,4 +1,4 @@
-version: '3.8'
+# version: '3.8'  # Obsolete in Docker Compose v2+
 
 # Database Server Configuration
 # Deploy on Instance 2: MySQL + Redis
