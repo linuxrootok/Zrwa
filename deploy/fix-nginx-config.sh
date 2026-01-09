@@ -111,3 +111,4 @@ echo ""
 echo "✅ 修复完成！"
 echo "测试命令: curl http://$APP_INSTANCE_IP/api/health"
 
+

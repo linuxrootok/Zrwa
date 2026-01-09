@@ -29,3 +29,4 @@ if ($response.StatusCode -eq 200) {
 Write-Host "`n=== 测试完成 ===" -ForegroundColor Cyan
 Write-Host "访问 http://localhost:8080 查看网站" -ForegroundColor Yellow
 
+

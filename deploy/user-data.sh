@@ -56,3 +56,4 @@ docker run -d \
     -v /home/ec2-user/app:/usr/share/nginx/html:ro \
     nginx:alpine
 
+

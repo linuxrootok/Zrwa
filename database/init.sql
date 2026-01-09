@@ -1,6 +1,5 @@
 -- MySQL 5.7 Schema Initialization
 CREATE DATABASE IF NOT EXISTS appdb CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
 USE appdb;
 
 -- Messages table
@@ -17,4 +16,5 @@ INSERT INTO messages (content) VALUES
     ('This is a test message'),
     ('Database connection works!')
 ON DUPLICATE KEY UPDATE content=content;
+
 

@@ -123,3 +123,4 @@ Write-Host "请按照 ARCHITECTURE-SEPARATED.md 中的步骤手动部署" -Foreg
 Write-Host "或使用 deploy-separated.sh (Linux/Mac)" -ForegroundColor Yellow
 Write-Host ""
 
+

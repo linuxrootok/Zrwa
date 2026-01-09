@@ -60,3 +60,4 @@ Write-Host "  File: $KEY_FILE" -ForegroundColor Gray
 Write-Host "  Size: $((Get-Item $KEY_FILE).Length) bytes" -ForegroundColor Gray
 Write-Host "  First 50 chars: $($keyContent.Substring(0, [Math]::Min(50, $keyContent.Length)))" -ForegroundColor Gray
 
+

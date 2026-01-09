@@ -13,3 +13,4 @@ EXPOSE 80
 # Nginx 默认启动命令
 CMD ["nginx", "-g", "daemon off;"]
 
+
